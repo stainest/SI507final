@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 import requests
 import json
 import sqlite3
+import plotly.graph_objects as go
 
 BASE_URL = 'https://www.transfermarkt.us'
 SEARCH_PATH = '/schnellsuche/ergebnis/schnellsuche?query='
@@ -24,7 +25,7 @@ def grab_search_request():
     Soup: A beautiful soup object of the scraped html page.
     Can also return 'exit' or 'remove' strings
     '''
-    userinput = input('Input a search term to find players for analysis, type "remove" to remove players for analysis, type "analysis" to analyze selected players, or type "exit": ')
+    userinput = input('\nInput a search term to find players for analysis, type "remove" to remove players for analysis, type "analysis" to analyze selected players, or type "exit": ')
     if userinput.lower() == 'exit':
         return 'exit'
     elif userinput.lower() == 'remove':
@@ -207,6 +208,16 @@ def pick_player_or_team(printlistplayers, printlistteams):
             print('Error: Unrecognized Input. Please type "player", "team", "done", or "exit"')
 
 def prepare_players_for_analysis(addlistslist, playeranalysis):
+    '''takes a list of lists of players and teams to add, and adds the players list
+    to the list of players to be included in analysis
+
+    Paramters:
+    addlistslist: a list of two lists, one of players to be added to analysis and one of teams to be added
+    playeranalysis: the list of players to be added to analysis
+
+    Returns:
+    N/A
+    '''
     if playeranalysis == []:
         for player in addlistslist[0]:
             playeranalysis.append(player)
@@ -224,6 +235,16 @@ def prepare_players_for_analysis(addlistslist, playeranalysis):
                 playeranalysis.append(player)
 
 def prepare_teams_for_analysis(addlistslist, teamanalysis):
+    '''takes a list of lists of players and teams to add, and adds the teams list
+    to the list of teams to be included in analysis
+
+    Paramters:
+    addlistslist: a list of two lists, one of players to be added to analysis and one of teams to be added
+    teamanalysis: the list of teams to be added to analysis
+
+    Returns:
+    N/A
+    '''
     if teamanalysis == []:
         for team in addlistslist[1]:
             teamanalysis.append(team)
@@ -241,6 +262,16 @@ def prepare_teams_for_analysis(addlistslist, teamanalysis):
                 teamanalysis.append(team)
 
 def remove_players_for_analysis(playeranalysis, teamanalysis):
+    '''Requests user input regarding the removal of players and teams
+    to be removed from the analysis lists
+
+    Parameters:
+    playeranalysis: the list of players to be added to analysis
+    teamanalysis: the list of teams to be added to analysis
+
+    Returns:
+    N/A
+    '''
     while True:
         if playeranalysis == []:
             print("There are no players to remove!!")
@@ -296,6 +327,18 @@ def remove_players_for_analysis(playeranalysis, teamanalysis):
                 print('Error: Unrecognized Input. Please type "player", "team", or "exit"')
 
 def get_team_players(team, teamsite):
+    '''Takes a team name and the website path associated with it to get the player
+    lists that include player name, website path, and team, returned in a list
+    of all of those players
+
+    Parameters:
+    team: The name of the team
+    teamsite: the website path connected to that team
+
+    Returns:
+    returnlist: a list of the players from the requested team, their team,
+    and their website path on Transfermarkt
+    '''
     teamsite2 = teamsite.replace('startseite', 'kader')
     searchsite = BASE_URL + teamsite2 + TEAM_PATH
     response = requests.get(searchsite, headers={'User-Agent': 'Custom'})
@@ -604,8 +647,536 @@ def turn_cache_into_dict(stats):
     returndict['minutes per goal'] = stats[0][20]
     return returndict
 
+def bar_graph_players(playerdicts, desiredstat):
+    '''Takes a list of player dictionaries and a desired statistic that lines up with
+    one of the dictionary keys and creates a bar graph of the players from the dictionary
+    around that key
+
+    Parameters:
+    playerdicts: a list of player dictionaries
+    desiredstat: the desired dictionary key
+
+    Returns:
+    N/A
+    '''
+    names = []
+    data = []
+    data2 = []
+    for player in playerdicts:
+        names.append(player['name'])
+    if desiredstat.lower() == 'goals':
+        for player in playerdicts:
+            fieldgoals = player['goals'] - player['penalty goals']
+            data.append(player['penalty goals'])
+            data2.append(fieldgoals)
+        fig = go.Figure(go.Bar(x=names, y=data, name='penalty goals'))
+        fig.add_trace(go.Bar(x=names, y=data2, name='goals from open play'))
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif desiredstat.lower() == 'chances':
+        for player in playerdicts:
+            data.append(player['goals'])
+            data2.append(player['assists'])
+        fig = go.Figure(go.Bar(x=names, y=data, name='goals'))
+        fig.add_trace(go.Bar(x=names, y=data2, name='assists'))
+        fig.update_layout(barmode='stack')
+        fig.show()
+    else:
+        for player in playerdicts:
+            data.append(player[desiredstat])
+        bar_data = go.Bar(x=names, y=data)
+        basic_layout = go.Layout(title=desiredstat)
+        fig = go.Figure(data=bar_data, layout=basic_layout)
+        fig.show()
+
+def scatter_graph(playerdicts, desiredstat1, desiredstat2):
+    '''Takes a list of player dictionaries and two desired statistics that line up with
+    dictionary keys and creates a scatter plot of the players from the dictionary
+    around that key
+
+    Parameters:
+    playerdicts: a list of player dictionaries
+    desiredstat1: one desired dictionary key
+    desiredstat2: the second desired dictionary key
+
+    Returns:
+    N/A
+    '''
+    names = []
+    data = []
+    data2 = []
+    for player in playerdicts:
+        names.append(player['name'])
+        data.append(player[desiredstat1])
+        data2.append(player[desiredstat2])
+    scatter_data = go.Scatter(
+        x=data,
+        y=data2,
+        text=names,
+        marker={'symbol':'diamond', 'size':20, 'color':'green'},
+        mode='markers+text',
+        textposition='top center')
+    basic_layout = go.Layout(title=f'{desiredstat1} by {desiredstat2}')
+    fig = go.Figure(data=scatter_data, layout=basic_layout)
+    fig.show()
+
+def team_bars(playerdicts, team):
+    '''Takes a list of player dictionaries and a desired team and creates a bargraph
+    of the players on the team. The values of the bar graph are determined by userinput
+    across 5 possibilities: goals, discipline, goalie, value, and minutes. The first
+    three are aggregate bar graphs, the latter two are normal bar graphs
+
+    Parameters:
+    playerdicts: a list of player dictionaries
+    team: a string representation of a team name
+
+    Returns:
+    N/A
+    '''
+    analytype = input('What type of analysis? Type "goals", "discipline", "goalie", "value", or "minutes": ')
+    if analytype.lower() == 'goals':
+        fig = go.Figure()
+        x = ['goals', 'assists', 'own goals']
+        for player in playerdicts:
+            if player['team'] == team:
+                playerdata = []
+                playerdata.append(player['goals'])
+                playerdata.append(player['assists'])
+                playerdata.append(player['own goals'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'discipline':
+        fig = go.Figure()
+        x = ['yellow cards', 'second yellows', 'red cards']
+        for player in playerdicts:
+            if player['team'] == team:
+                playerdata = []
+                playerdata.append(player['yellow cards'])
+                playerdata.append(player['second yellows'])
+                playerdata.append(player['red cards'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'goalie':
+        fig = go.Figure()
+        x = ['goals conceded', 'clean sheets']
+        for player in playerdicts:
+            if player['team'] == team:
+                playerdata = []
+                playerdata.append(player['goals conceded'])
+                playerdata.append(player['clean sheets'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'value':
+        names = []
+        data = []
+        for player in playerdicts:
+            if player['team'] == team:
+                data.append(player['value ($)'])
+                names.append(player['name'])
+            else:
+                pass
+        bar_data = go.Bar(x=names, y=data)
+        basic_layout = go.Layout(title='Value ($)')
+        fig = go.Figure(data=bar_data, layout=basic_layout)
+        fig.show()
+    elif analytype.lower() == 'minutes':
+        names = []
+        data = []
+        for player in playerdicts:
+            if player['team'] == team:
+                data.append(player['total minutes'])
+                names.append(player['name'])
+            else:
+                pass
+        bar_data = go.Bar(x=names, y=data)
+        basic_layout = go.Layout(title=['Total Minutes Played'])
+        fig = go.Figure(data=bar_data, layout=basic_layout)
+        fig.show()
+    else:
+        print('Error: Unrecognized Input. Please type one of the accepted inputs.')
+
+def team_2_bars(playerdicts, team1, team2):
+    '''Takes a list of player dictionaries and two desired teams and creates a bargraph
+    of the players on those teams. The values of the bar graph are determined by userinput
+    across 5 possibilities: goals, discipline, goalie, value, and minutes. All graphs
+    are aggregated bar graphs, i.e. they stack.
+
+    Parameters:
+    playerdicts: a list of player dictionaries
+    team1: a string representation of a team name
+    team2: a string representation of a second team name
+
+    Returns:
+    N/A
+    '''
+    analytype = input('What type of analysis? Type "goals", "discipline", "goalie", "value", or "minutes": ')
+    if analytype.lower() == 'goals':
+        fig = go.Figure()
+        x = [f'{team1} goals', f'{team2} goals', f'{team1} assists', f'{team2} assists', f'{team1} own goals', f'{team2} own goals']
+        for player in playerdicts:
+            if player['team'] == team1:
+                playerdata = []
+                playerdata.append(player['goals'])
+                playerdata.append(0)
+                playerdata.append(player['assists'])
+                playerdata.append(0)
+                playerdata.append(player['own goals'])
+                playerdata.append(0)
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            elif player['team'] == team2:
+                playerdata = []
+                playerdata.append(0)
+                playerdata.append(player['goals'])
+                playerdata.append(0)
+                playerdata.append(player['assists'])
+                playerdata.append(0)
+                playerdata.append(player['own goals'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'discipline':
+        fig = go.Figure()
+        x = [f'{team1} yellow cards', f'{team2} yellow cards', f'{team1} second yellows', f'{team2} second yellows',
+        f'{team1} red cards', f'{team2} red cards']
+        for player in playerdicts:
+            if player['team'] == team1:
+                playerdata = []
+                playerdata.append(player['yellow cards'])
+                playerdata.append(0)
+                playerdata.append(player['second yellows'])
+                playerdata.append(0)
+                playerdata.append(player['red cards'])
+                playerdata.append(0)
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            elif player['team'] == team2:
+                playerdata = []
+                playerdata.append(0)
+                playerdata.append(player['yellow cards'])
+                playerdata.append(0)
+                playerdata.append(player['second yellows'])
+                playerdata.append(0)
+                playerdata.append(player['red cards'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'goalie':
+        fig = go.Figure()
+        x = [f'{team1} goals conceded', f'{team2} goals conceded', f'{team1} clean sheets', f'{team2} clean sheets']
+        for player in playerdicts:
+            if player['team'] == team1:
+                playerdata = []
+                playerdata.append(player['goals conceded'])
+                playerdata.append(0)
+                playerdata.append(player['clean sheets'])
+                playerdata.append(0)
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            elif player['team'] == team2:
+                playerdata = []
+                playerdata.append(0)
+                playerdata.append(player['goals conceded'])
+                playerdata.append(0)
+                playerdata.append(player['clean sheets'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'value':
+        fig = go.Figure()
+        x = [f'{team1} value ($)', f'{team2} value ($)']
+        for player in playerdicts:
+            if player['team'] == team1:
+                playerdata = []
+                playerdata.append(player['value ($)'])
+                playerdata.append(0)
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            elif player['team'] == team2:
+                playerdata = []
+                playerdata.append(0)
+                playerdata.append(player['value ($)'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    elif analytype.lower() == 'minutes':
+        fig = go.Figure()
+        x = [f'{team1} total minutes', f'{team2} total minutes']
+        for player in playerdicts:
+            if player['team'] == team1:
+                playerdata = []
+                playerdata.append(player['total minutes'])
+                playerdata.append(0)
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            elif player['team'] == team2:
+                playerdata = []
+                playerdata.append(0)
+                playerdata.append(player['total minutes'])
+                fig.add_trace(go.Bar(x=x, y=playerdata, name=player['name']))
+            else:
+                pass
+        fig.update_layout(barmode='stack')
+        fig.show()
+    else:
+        print("Error: Unrecognized Input.")
+
+def radar_function(playerdicts):
+    '''Takes a given list of player dictionaries and asks the user to select one of them,
+    which it uses to create a radar plot. The rest of the dictionaries are used to create
+    an "average" which is also on the radar plot, and to sent the range on the radar plot.
+
+    Parameters:
+    playerdicts: A list of player dictionaries
+
+    Returns:
+    None
+    '''
+    for i in range(len(playerdicts)):
+        print(f'{i+1}. {playerdicts[i]["name"]}')
+    analyplay = input('Which player would you like to analyze? Type their number: ')
+    if not analyplay.isnumeric():
+        print("Error: Please type the number next to the desired team")
+    else:
+        try:
+            intplay = int(analyplay) - 1
+            theplayer = playerdicts[intplay]
+            if theplayer['position'].lower() == 'goalkeeper':
+                categories = ['goals conceded', 'clean sheets', 'total minutes', 'age', 'yellow cards', 'value ($)']
+            else:
+                categories = ['goals', 'assists', 'total minutes', 'age', 'yellow cards', 'value ($)']
+            carinput = input('Would you like "career" stats or "per 90" stats?: ')
+            if carinput.lower() == 'per 90':
+                categories[2] = 'substitutions on'
+                categories[3] = 'appearances'
+                categories[5] = 'red cards'
+            else:
+                pass
+            x = []
+            y = []
+            z = []
+            for item in categories:
+                ynum = [0, {'total minutes': 0}]
+                znum = 0
+                for player in playerdicts:
+                    if theplayer['position'].lower() == 'goalkeeper':
+                        if (item == 'goals conceded' or item == 'clean sheets'):
+                            if player['position'].lower() == 'goalkeeper':
+                                if carinput.lower() == 'career':
+                                    znum += player[item]
+                                else:
+                                    z90 = player['total minutes'] / 90
+                                    znum += (player[item] / z90)
+                            else:
+                                pass
+                        else:
+                            if carinput.lower() == 'career':
+                                znum += player[item]
+                            else:
+                                z90 = player['total minutes'] / 90
+                                znum += (player[item] / z90)
+                    else:
+                        if carinput.lower() == 'career':
+                            znum += player[item]
+                        else:
+                            z90 = player['total minutes'] / 90
+                            znum += (player[item] / z90)
+                    if carinput.lower() == 'career':
+                        if player[item] >= ynum[0]:
+                            ynum[0] = player[item]
+                            ynum[1] = player
+                        else:
+                            pass
+                    else:
+                        y90 = player['total minutes'] / 90
+                        ystat = player[item] / y90
+                        if ystat >= ynum[0]:
+                            ynum[0] = ystat
+                            ynum[1] = player
+                        else:
+                            pass
+                if carinput.lower() == 'career':
+                    compnum = ynum[0] / 5
+                    x.append(theplayer[item]/compnum)
+                    y.append(ynum[0]/compnum)
+                    z.append(znum/compnum)
+                elif carinput.lower() == 'per 90':
+                    x90 = theplayer['total minutes'] / 90
+                    compnum = ynum[0] / 5
+                    xmin = theplayer[item] / x90
+                    x.append(xmin/compnum)
+                    y.append(ynum[0]/compnum)
+                    z.append(znum/compnum)
+                else:
+                    print('sucks 2 suck')
+            for i in range(len(z)):
+                z[i] = z[i]/len(playerdicts)
+            fig = go.Figure()
+            fig.add_trace(go.Scatterpolar(
+                r=x,
+                theta=categories,
+                fill='toself',
+                name=theplayer['name']
+            ))
+            '''fig.add_trace(go.Scatterpolar(
+                r=y,
+                theta=categories,
+                fill='toself',
+                name='PlayerMax'
+                ))'''
+            fig.add_trace(go.Scatterpolar(
+                r=z,
+                theta=categories,
+                fill='toself',
+                name='PlayerAvg'
+            ))
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 5]
+                    )),
+                showlegend=True
+            )
+            fig.show()
+        except:
+            print('Error: Number out of range')
+
+def get_desired_stat():
+    '''Requests user input to return one of the keys of the player dictionaries that
+    can be used in analysis
+
+    Parameters:
+    N/A
+    
+    Returns:
+    a string value from playerstattypes list associated with a player dicitonary key
+    '''
+    playerstattypes = ['value ($)', 'height (cm)', 'appearances', 'goals', 'assists', 'own goals',
+                        'substitutions on', 'substitutions off', 'yellow cards', 'second yellows',
+                        'red cards', 'penalty goals', 'goals conceded', 'clean sheets',
+                        'total minutes', 'minutes per goal']
+    for i in range(len(playerstattypes)):
+        print(f'{i+1}. {playerstattypes[i]}')
+    desiredstatinput = input('What statistic would you like to compare on? Please input the number: ')
+    if not desiredstatinput.isnumeric():
+        print('Error: Not a Number. Please type the number next to the desired statistic')
+    else:
+        try:
+            desint = int(desiredstatinput) - 1
+            return playerstattypes[desint]
+        except:
+            return None
+
+def analysis_function(playerdicts):
+    '''Uses user input to determine what kind of graph they would like to make, and then
+    uses the given player dictionaries to call the correct graph creating function
+
+    Parameters:
+    playerdicts: a list of player dictionaries
+
+    Returns:
+    N/A
+    '''
+    while True:
+        userinput = input('\nWould you like an analyze by player or a team? Type "player", "team", or "back": ')
+        if userinput.lower() == 'back':
+            break
+        elif userinput.lower() == 'player':
+            number = input('One player or all players? Please type "one" or "all": ')
+            if number.lower() == 'one':
+                radar_function(playerdicts)
+            elif number.lower() == 'all':
+                graphtype = input('Across "one" statistic or "two"?: ')
+                if (graphtype == 'one' or graphtype == '1'):
+                    desiredstat = get_desired_stat()
+                    if desiredstat is not None:
+                        bar_graph_players(playerdicts, desiredstat)
+                    else:
+                        print('Error: Number out of range')
+                elif (graphtype == 'two' or graphtype == '2'):
+                    print('FIRST STATISTIC')
+                    desiredstat1 = get_desired_stat()
+                    if desiredstat1 is not None:
+                        print('SECOND STATISTIC')
+                        desiredstat2 = get_desired_stat()
+                        if desiredstat2 is not None:
+                            scatter_graph(playerdicts, desiredstat1, desiredstat2)
+                        else:
+                            print('Error: number out of range')
+                    else:
+                        print('Error: number out of range')
+                else:
+                    print('Error: Type "one" or "two"')
+        elif userinput.lower() == 'team':
+            teamlist = []
+            for player in playerdicts:
+                if player['team'] not in teamlist:
+                    teamlist.append(player['team'])
+                else:
+                    pass
+            for i in range(len(teamlist)):
+                print(f'{i+1}. {teamlist[i]}')
+            teamnuminput = input('Would you like to analyze "one" or "two" teams?: ')
+            if (teamnuminput == "one" or teamnuminput == "1"):
+                teaminput = input('Which team would you like to analyze? Type their number: ')
+                if not teaminput.isnumeric():
+                    print('Error: Please type the number, not the team name')
+                else:
+                    teamint = int(teaminput) - 1
+                    try:
+                        team = teamlist[teamint]
+                        team_bars(playerdicts, team)
+                    except:
+                        print('Error: Selected number out of range')
+            elif (teamnuminput == "two" or teamnuminput == "2"):
+                team1input = input('Which team would you like to analyze? Type their number: ')
+                if not team1input.isnumeric():
+                    print("Error: Please type the number, not the team name")
+                else:
+                    team2input = input('Which team would you like to analyze in addition to the first? Type their number: ')
+                    if not team2input.isnumeric():
+                        print('Error: Please type the number, not the team name')
+                    else:
+                        team1int = int(team1input) - 1
+                        team2int = int(team2input) - 1
+                        try:
+                            team1 = teamlist[team1int]
+                            team2 = teamlist[team2int]
+                            team_2_bars(playerdicts, team1, team2)
+                        except:
+                            print('Error: Selected number out of range')
+            else:
+                print("Error: Unrecognized input")
+        else:
+            print('Error: Unrecognized Input. Please type "player", "team", or "exit"')
+
 def input_search_term():
-    ''''''
+    '''Collects a user search and uses it to scrape information from Transfermarkt regarding
+    players and teams that match the search. Prompts the user to select which of the returned
+    search options they wish to add to the program for analysis, from the top ten players
+    and teams. Adds those to the analysis
+    Also prompts the user to move to another part of the program - to remove players and
+    teams from analysis, to the analysis itself, or to exit the program
+    
+    Parameters:
+    None
+    
+    Returns:
+    N/A
+    '''
     connect_to_cache()
     playeranalysis = []
     teamanalysis = []
@@ -631,6 +1202,7 @@ def input_search_term():
                         playerdict = turn_cache_into_dict(stats)
                         playerdicts.append(playerdict)
                 cache(playerdicts)
+                analysis_function(playerdicts)
         else:
             thedivs = soup.find_all('div', class_='row')
             newdivs = []
@@ -661,14 +1233,11 @@ def input_search_term():
             for team in teamanalysis:
                 teamplayerslist = get_team_players(team[1], team[2])
                 for player in teamplayerslist:
-                    playeranalysis.append(player)
+                    if player not in playeranalysis:
+                        playeranalysis.append(player)
+                    else:
+                        pass
 
-
-
-
-#gio = [0, 'Giovanni Lo Celso', 'Tottenham Hotspur', '/giovani-lo-celso/profil/spieler/348795']
-#giodict = get_player_stats(gio)
-#print(giodict)
 
 
 input_search_term()
